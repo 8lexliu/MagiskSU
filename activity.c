@@ -10,9 +10,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
-#include <paths.h>
 #include <stdio.h>
-#include <stdarg.h>
 
 #include "magisk.h"
 #include "su.h"
@@ -47,7 +45,7 @@ static void silent_run(char* const args[]) {
 }
 
 static int setup_user(struct su_context *ctx, char* user) {
-	switch (ctx->info->multiuser_mode) {
+	switch (ctx->info->dbs.v[SU_MULTIUSER_MODE]) {
 	case MULTIUSER_MODE_OWNER_ONLY:   /* Should already be denied if not owner */
 	case MULTIUSER_MODE_OWNER_MANAGED:
 		sprintf(user, "%d", 0);
@@ -61,7 +59,10 @@ static int setup_user(struct su_context *ctx, char* user) {
 
 void app_send_result(struct su_context *ctx, policy_t policy) {
 	char fromUid[16];
-	sprintf(fromUid, "%d", ctx->info->uid);
+	if (ctx->info->dbs.v[SU_MULTIUSER_MODE] == MULTIUSER_MODE_OWNER_MANAGED)
+		sprintf(fromUid, "%d", ctx->info->uid % 100000);
+	else
+		sprintf(fromUid, "%d", ctx->info->uid);
 
 	char toUid[16];
 	sprintf(toUid, "%d", ctx->to.uid);
@@ -73,7 +74,7 @@ void app_send_result(struct su_context *ctx, policy_t policy) {
 	int notify = setup_user(ctx, user);
 
 	char activity[128];
-	sprintf(activity, ACTION_RESULT, ctx->path.pkg_name);
+	sprintf(activity, ACTION_RESULT, ctx->info->str.s[SU_MANAGER]);
 
 	// Send notice to manager, enable logging
 	char *result_command[] = {
@@ -92,6 +93,7 @@ void app_send_result(struct su_context *ctx, policy_t policy) {
 
 	// Send notice to user (if needed) to create toasts
 	if (notify) {
+		sprintf(fromUid, "%d", ctx->info->uid);
 		sprintf(user, "%d", notify);
 		char *notify_command[] = {
 			AM_PATH, "broadcast", "-n",
@@ -111,13 +113,13 @@ void app_send_request(struct su_context *ctx) {
 	int notify = setup_user(ctx, user);
 
 	char activity[128];
-	sprintf(activity, ACTION_REQUEST, ctx->path.pkg_name);
+	sprintf(activity, ACTION_REQUEST, ctx->info->str.s[SU_MANAGER]);
 
 	char *request_command[] = {
 		AM_PATH, "start", "-n",
 		activity,
 		"--user", user,
-		"--es", "socket", ctx->path.sock_path,
+		"--es", "socket", ctx->sock_path,
 		"--ez", "timeout", notify ? "false" : "true",
 		NULL
 	};
@@ -126,7 +128,7 @@ void app_send_request(struct su_context *ctx) {
 	// Send notice to user to tell them root is managed by owner
 	if (notify) {
 		sprintf(user, "%d", notify);
-		sprintf(activity, ACTION_RESULT, ctx->path.pkg_name);
+		sprintf(activity, ACTION_RESULT, ctx->info->str.s[SU_MANAGER]);
 		char *notify_command[] = {
 			AM_PATH, "broadcast", "-n",
 			activity,

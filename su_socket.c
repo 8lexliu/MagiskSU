@@ -12,11 +12,11 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <selinux/selinux.h>
-#include <syscall.h>
 
 #include "magisk.h"
 #include "utils.h"
 #include "su.h"
+#include "magiskpolicy.h"
 
 int socket_create_temp(char *path, size_t len) {
     int fd;
@@ -29,7 +29,7 @@ int socket_create_temp(char *path, size_t len) {
 
     memset(&sun, 0, sizeof(sun));
     sun.sun_family = AF_LOCAL;
-    snprintf(path, len, "/dev/.socket%d", (int) syscall(SYS_gettid));
+    snprintf(path, len, "/dev/.socket%d", getpid());
     strcpy(sun.sun_path, path);
 
     /*
@@ -43,8 +43,8 @@ int socket_create_temp(char *path, size_t len) {
     xlisten(fd, 1);
 
     // Set attributes so requester can access it
-    setfilecon(path, "u:object_r:su_device:s0");
-    chown(path, su_ctx->st.st_uid, su_ctx->st.st_gid);
+    setfilecon(path, "u:object_r:"SEPOL_FILE_DOMAIN":s0");
+    chown(path, su_ctx->info->manager_stat.st_uid, su_ctx->info->manager_stat.st_gid);
 
     return fd;
 }
